@@ -24,6 +24,7 @@ var baseDir = flag.String("baseDir", "", "Directory to copy s3 contents to. (req
 var bucket = flag.String("bucket", "", "S3 Bucket to copy contents from. (required)")
 var concurrency = flag.Int("concurrency", 10, "Number of concurrent connections to use.")
 var queueSize = flag.Int("queueSize", 100, "Size of the queue")
+var maxRetry = flag.Int("max retries", 3, "Maximum numbers of retries")
 
 func main() {
 	flag.Parse()
@@ -61,11 +62,19 @@ func DownloadBucket(client *s3.S3, bucket, baseDir string, concurrency, queueSiz
 		go func() {
 			defer wg.Done()
 			for key := range keysChan {
-				n, err := cpyr.Copy(key)
-				if err != nil {
-					log.Printf("Failed to download key %v, due to %v", key, err)
+				for {
+					n, err := cpyr.Copy(key)
+					count := 0
+					statsTracker.Inc(n)
+					if err != nil && count < *maxRetry {
+						count++
+						log.Printf("Failed to download key %v, due to %v. retry %d", key, err, count)
+					} else {
+						break
+					}
+
 				}
-				statsTracker.Inc(n)
+
 			}
 		}()
 	}
